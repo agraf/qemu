@@ -19,6 +19,8 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "system/address-spaces.h"
+#include "hw/acpi/acpi_aml_interface.h"
+#include "hw/acpi/tpm.h"
 #include "hw/qdev-properties.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/acpi/tpm.h"
@@ -120,6 +122,11 @@ static void tpm_crb_none_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    if (tpm_crb_none_get_version(TPM_IF(s)) != TPM_VERSION_2_0) {
+        error_setg(errp, "TPM CRB only supports TPM 2.0 backends");
+        return;
+    }
+
     tpm_crb_init_memory(OBJECT(s), &s->state, errp);
 
     /* only used for migration */
@@ -141,10 +148,17 @@ static void tpm_crb_none_realize(DeviceState *dev, Error **errp)
     }
 }
 
+static void build_tpm_crb_none_aml(AcpiDevAmlIf *adev, Aml *scope)
+{
+    tpm_crb_build_aml(TPM_IF(adev), scope, TPM_CRB_ADDR_BASE, TPM_CRB_ADDR_SIZE,
+                      true);
+}
+
 static void tpm_crb_none_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     TPMIfClass *tc = TPM_IF_CLASS(klass);
+    AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
     dc->realize = tpm_crb_none_realize;
     device_class_set_props(dc, tpm_crb_none_properties);
@@ -153,6 +167,7 @@ static void tpm_crb_none_class_init(ObjectClass *klass, void *data)
     tc->model = TPM_MODEL_TPM_CRB;
     tc->get_version = tpm_crb_none_get_version;
     tc->request_completed = tpm_crb_none_request_completed;
+    adevc->build_dev_aml = build_tpm_crb_none_aml;
 
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
@@ -165,6 +180,7 @@ static const TypeInfo tpm_crb_none_info = {
     .class_init  = tpm_crb_none_class_init,
     .interfaces = (const InterfaceInfo[]) {
         { TYPE_TPM_IF },
+        { TYPE_ACPI_DEV_AML_IF },
         { }
     }
 };
