@@ -298,6 +298,12 @@ struct MachineClass {
     SMPCompatProps smp_props;
     const char *default_ram_id;
 
+    /*
+     * platform bits for guest-driven fw update feature
+     * currently onluy last three bits are used as platform bits.
+     */
+    uint8_t vmfwupdate_plat;
+
     HotplugHandler *(*get_hotplug_handler)(MachineState *machine,
                                            DeviceState *dev);
     bool (*hotplug_allowed)(MachineState *state, DeviceState *dev,
