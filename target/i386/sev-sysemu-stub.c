@@ -17,6 +17,7 @@
 #include "qapi/qapi-commands-misc-target.h"
 #include "qapi/error.h"
 #include "sev.h"
+#include "sysemu/kvm.h"
 
 SevInfo *qmp_query_sev(Error **errp)
 {
@@ -69,5 +70,9 @@ void hmp_info_sev(Monitor *mon, const QDict *qdict)
 }
 
 void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size)
+{
+}
+
+void kvm_mark_guest_state_unprotected(void)
 {
 }

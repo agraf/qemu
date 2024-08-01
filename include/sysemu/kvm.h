@@ -564,6 +564,7 @@ bool kvm_dirty_ring_enabled(void);
 uint32_t kvm_dirty_ring_size(void);
 
 void kvm_mark_guest_state_protected(void);
+void kvm_mark_guest_state_unprotected(void);
 
 /**
  * kvm_hwpoisoned_mem - indicate if there is any hwpoisoned page

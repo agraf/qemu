@@ -19,6 +19,9 @@
 #include "hw/qdev-properties.h"
 #include "hw/misc/vmfwupdate.h"
 #include "qemu/error-report.h"
+#include "sysemu/kvm.h"
+#include "sysemu/runstate.h"
+#include "exec/confidential-guest-support.h"
 
 static uint8_t get_vmfwupdate_plat(void)
 {
@@ -64,7 +67,31 @@ static FWCfgState* get_x86_fw_cfg(void) {
 #endif
 
 static void regenerate_sev_vm(void) {
-    /* TODO */
+    MachineState *ms;
+    Error *local_err = NULL;
+
+    Object *m_obj = qdev_get_machine();
+    if (!object_dynamic_cast(m_obj, TYPE_MACHINE)) { /* is this check needed? */
+        return;
+    }
+    ms = MACHINE(m_obj);
+
+    if (!ms->cgs) {
+        /* for non-sev guests, this is a NOOP */
+        return;
+    }
+
+    /* destroy sev vm context */
+    if (confidential_guest_kvm_reset(ms->cgs, &local_err) < 0) {
+        error_report_err(local_err);
+    }
+
+    /* mark guest as mutable so that we can initiate a reset */
+    kvm_mark_guest_state_unprotected();
+
+    /* initiate reset */
+    qemu_system_reset_request(SHUTDOWN_CAUSE_SEV_RESET);
+
     return;
 }
 
@@ -150,18 +177,23 @@ static void fw_ctrl_write(void *dev, off_t offset, size_t len) {
      * Not required if we use the standard locations for firmware?
      */
 
-    /*
-     * trigger reboot of the guest with known state and blobs in the
-     * specified memory location.
-     */
-    if ((char) s->fw_cfg_ctl == 't') {
+    switch ((char) s->fw_cfg_ctl) {
+    case 't':
+        /*
+         * trigger reboot of the guest with known state and blobs in the
+         * specified memory location.
+         */
         regenerate_sev_vm();
+        /* does not return */
+        break;
+    case 'd':
+        /* kill switch - disable update mechanism */
+        s->enabled = false;
+        break;
+    default:
+        warn_report("vmfwupdate: option not recognized!");
     }
 
-    /* kill switch - disable update mechanism */
-    if ((char) s->fw_cfg_ctl == 'd') {
-        s->enabled = false;
-    }
     return;
 
  failed:
