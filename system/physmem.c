@@ -152,6 +152,7 @@ static void io_mem_init(void);
 static void memory_map_init(void);
 static void tcg_log_global_after_sync(MemoryListener *listener);
 static void tcg_commit(MemoryListener *listener);
+static int ram_block_rebind(NotifierWithReturn *notifier, void *data, Error** errp);
 
 /**
  * CPUAddressSpace: all the information a CPU needs about an AddressSpace
@@ -171,6 +172,10 @@ struct DirtyBitmapSnapshot {
     ram_addr_t start;
     ram_addr_t end;
     unsigned long dirty[];
+};
+
+static NotifierWithReturn physmem_vmfd_change_notifier = {
+        .notify = ram_block_rebind,
 };
 
 static void phys_map_node_reserve(PhysPageMap *map, unsigned nodes)
@@ -1846,6 +1851,7 @@ static void ram_block_add(RAMBlock *new_block, Error **errp)
     RAMBlock *block;
     RAMBlock *last_block = NULL;
     bool free_on_error = false;
+    static bool vmfd_notifier_added = false;
     ram_addr_t old_ram_size, new_ram_size;
     Error *err = NULL;
 
@@ -1899,6 +1905,7 @@ static void ram_block_add(RAMBlock *new_block, Error **errp)
             qemu_mutex_unlock_ramlist();
             goto out_free;
         }
+
     }
 
     new_ram_size = MAX(old_ram_size,
@@ -1948,6 +1955,11 @@ static void ram_block_add(RAMBlock *new_block, Error **errp)
         }
         ram_block_notify_add(new_block->host, new_block->used_length,
                              new_block->max_length);
+    }
+
+    if (!vmfd_notifier_added) {
+        kvm_vmfd_add_change_notifier(&physmem_vmfd_change_notifier);
+        vmfd_notifier_added = true;
     }
     return;
 
@@ -2350,6 +2362,34 @@ found:
         *offset &= TARGET_PAGE_MASK;
     }
     return block;
+}
+
+/*
+ * Creates new guest memfd for the ramblocks and closes the
+ * existing memfd.
+ */
+static int ram_block_rebind(NotifierWithReturn *notifier,
+                            void *data, Error** errp) {
+    RAMBlock *block;
+
+    qemu_mutex_lock_ramlist();
+
+    RAMBLOCK_FOREACH(block) {
+        if (block->flags & RAM_GUEST_MEMFD) {
+            if (block->guest_memfd >= 0) {
+                close(block->guest_memfd);
+            }
+            block->guest_memfd = kvm_create_guest_memfd(block->max_length,
+                                                        0, errp);
+            if (block->guest_memfd < 0) {
+                qemu_mutex_unlock_ramlist();
+                return -1;
+            }
+
+        }
+    }
+    qemu_mutex_unlock_ramlist();
+    return 0;
 }
 
 /*

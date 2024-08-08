@@ -16,6 +16,7 @@
 #include "qemu/units.h"
 #include "qemu/osdep.h"
 #include "qom/object.h"
+#include "qemu/event_notifier.h"
 #include "linux-headers/asm-x86/kvm.h"
 
 #define TYPE_VMFWUPDATE "vmfwupdate"

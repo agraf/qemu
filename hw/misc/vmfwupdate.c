@@ -21,7 +21,7 @@
 #include "qemu/error-report.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
-#include "exec/confidential-guest-support.h"
+
 
 static uint8_t get_vmfwupdate_plat(void)
 {
@@ -68,7 +68,6 @@ static FWCfgState* get_x86_fw_cfg(void) {
 
 static void regenerate_sev_vm(void) {
     MachineState *ms;
-    Error *local_err = NULL;
 
     Object *m_obj = qdev_get_machine();
     if (!object_dynamic_cast(m_obj, TYPE_MACHINE)) { /* is this check needed? */
@@ -81,15 +80,15 @@ static void regenerate_sev_vm(void) {
         return;
     }
 
-    /* destroy sev vm context */
-    if (confidential_guest_kvm_reset(ms->cgs, &local_err) < 0) {
-        error_report_err(local_err);
-    }
+    /* mark guest state as mutable so that we can initiate a reset */
+    kvm_mark_guest_state_mutable();
 
-    /* mark guest as mutable so that we can initiate a reset */
-    kvm_mark_guest_state_unprotected();
-
-    /* initiate reset */
+    /*
+     * initiate reset.
+     * TODO: do we really need the special flag SHUTDOWN_CAUSE_SEV_RESET
+     * or do we allow all confidential resets to regenerate sev context
+     * upon reset?
+     */
     qemu_system_reset_request(SHUTDOWN_CAUSE_SEV_RESET);
 
     return;

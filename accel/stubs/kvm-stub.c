@@ -83,6 +83,19 @@ void kvm_irqchip_change_notify(void)
 {
 }
 
+void kvm_vmfd_add_change_notifier(NotifierWithReturn *n)
+{
+}
+
+void kvm_vmfd_remove_change_notifier(NotifierWithReturn *n)
+{
+}
+
+int kvm_vmfd_change_notify(Error **errp)
+{
+    return 0;
+}
+
 int kvm_irqchip_add_irqfd_notifier_gsi(KVMState *s, EventNotifier *n,
                                        EventNotifier *rn, int virq)
 {
@@ -133,4 +146,8 @@ bool kvm_hwpoisoned_mem(void)
 int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
 {
     return -ENOSYS;
+}
+
+void kvm_mark_guest_state_mutable(void)
+{
 }

@@ -72,6 +72,12 @@ typedef struct QEMU_PACKED PaddedSevHashTable {
     uint8_t padding[ROUND_UP(sizeof(SevHashTable), 16) - sizeof(SevHashTable)];
 } PaddedSevHashTable;
 
+static int sev_reinitialize(NotifierWithReturn *notifier,
+                            void *unused, Error** errp);
+NotifierWithReturn vmfd_change_notifier = {
+    .notify = sev_reinitialize,
+};
+
 QEMU_BUILD_BUG_ON(sizeof(PaddedSevHashTable) % 16 != 0);
 
 #define SEV_INFO_BLOCK_GUID     "00f771de-1a7e-4fcb-890e-68c77e2fb44e"
@@ -1557,29 +1563,6 @@ static int sev_common_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     return 0;
 }
 
-static int sev_common_kvm_reset(ConfidentialGuestSupport *cgs, Error **errp)
-{
-    SevCommonState *sev_common = SEV_COMMON(cgs);
-    int rc, fw_error;
-    /*
-     * this is a new ioctl that destroys SEV VM context. See
-     * arch/x86/kvm/svm/sev.c:sev_mem_enc_ioctl() in Linux kernel.
-     */
-    rc = sev_ioctl(sev_common->sev_fd, KVM_SEV_SNP_LAUNCH_DESTROY,
-                   NULL, &fw_error);
-    if (rc < 0) {
-        error_report("%s: KVM_SEV_SNP_LAUNCH_DESTROY ret=%d fw_error=%d '%s'",
-                __func__, rc, fw_error, fw_error_to_str(fw_error));
-        /* ignore EINVAL for now since the kernel may not have support for
-         * the new IOCTL
-         */
-        if (rc != -EINVAL) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
 
 static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 {
@@ -1626,6 +1609,28 @@ static int sev_snp_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     } else if (x86ms->smm == ON_OFF_AUTO_ON) {
         error_setg(errp, "SEV-SNP does not support SMM.");
         return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * re-initialize sev vm after vmfd reset
+ */
+static int sev_reinitialize(NotifierWithReturn *notifier,
+                            void *unused, Error** errp) {
+    SevCommonState *sev_common = SEV_COMMON(MACHINE(qdev_get_machine())->cgs);
+    SevCommonStateClass *klass;
+    int ret;
+
+    if (!sev_common) {
+        return 0;
+    }
+
+    if (!sev_check_state(sev_common, SEV_STATE_RUNNING)) {
+        /* this calls sev_snp_launch_finish() etc */
+        klass = SEV_COMMON_GET_CLASS(sev_common);
+        klass->launch_finish(sev_common);
     }
 
     return 0;
@@ -2074,7 +2079,6 @@ sev_common_class_init(ObjectClass *oc, void *data)
     ConfidentialGuestSupportClass *klass = CONFIDENTIAL_GUEST_SUPPORT_CLASS(oc);
 
     klass->kvm_init = sev_common_kvm_init;
-    klass->kvm_reset = sev_common_kvm_reset;
 
     object_class_property_add_str(oc, "sev-device",
                                   sev_common_get_sev_device,

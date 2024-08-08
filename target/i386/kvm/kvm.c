@@ -3185,6 +3185,101 @@ static void kvm_vm_enable_energy_msrs(KVMState *s)
     return;
 }
 
+int kvm_arch_vmfd_change_ops(MachineState *ms, KVMState *s)
+{
+    uint64_t identity_base;
+    int ret;
+
+    /*
+     * Initialize SEV context, if required
+     *
+     * If no memory encryption is requested (ms->cgs == NULL) this is
+     * a no-op.
+     *
+     * It's also a no-op if a non-SEV confidential guest support
+     * mechanism is selected.  SEV is the only mechanism available to
+     * select on x86 at present, so this doesn't arise, but if new
+     * mechanisms are supported in future (e.g. TDX), they'll need
+     * their own initialization either here or elsewhere.
+     */
+    if (ms->cgs) {
+        ret = confidential_guest_kvm_init(ms->cgs, &local_err);
+        if (ret < 0) {
+            error_report_err(local_err);
+            return ret;
+        }
+    }
+    ret = kvm_vm_enable_exception_payload(s);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = kvm_vm_enable_triple_fault_event(s);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (s->xen_version) {
+#ifdef CONFIG_XEN_EMU
+        error_report("kvm: Xen support for vmfd reset not enabled!");
+#else
+        error_report("kvm: Xen support not enabled in qemu");
+#endif
+        return -ENOTSUP;
+    }
+
+    ret = kvm_vm_set_identity_map_addr(s, &identity_base);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = kvm_vm_set_tss_addr(s, identity_base + 0x1000);
+    if (ret < 0) {
+        return ret;
+    }
+    ret = kvm_vm_set_nr_mmu_pages(s);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (enable_cpu_pm) {
+        ret = kvm_vm_enable_disable_exits(s);
+        if (ret < 0) {
+            error_report("kvm: guest stopping CPU not supported: %s",
+                         strerror(-ret));
+        }
+    }
+
+    if (object_dynamic_cast(OBJECT(ms), TYPE_X86_MACHINE)) {
+        X86MachineState *x86ms = X86_MACHINE(ms);
+
+        if (x86ms->bus_lock_ratelimit > 0) {
+            ret = kvm_vm_enable_bus_lock_exit(s);
+            if (ret < 0) {
+                return ret;
+            }
+        }
+    }
+
+    ret = kvm_vm_enable_notify_vmexit(s);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (kvm_vm_check_extension(s, KVM_CAP_X86_USER_SPACE_MSR)) {
+        ret = kvm_vm_enable_userspace_msr(s);
+        if (ret < 0) {
+            return ret;
+        }
+
+        if (s->msr_energy.enable == true) {
+            kvm_vm_enable_energy_msrs(s);
+        }
+    }
+
+    return 0;
+}
+
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
     uint64_t identity_base = 0xfffbc000;

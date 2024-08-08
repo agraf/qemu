@@ -136,6 +136,8 @@ struct KVMState
 #endif
     KVMMemoryListener memory_listener;
     QLIST_HEAD(, KVMParkedVcpu) kvm_parked_vcpus;
+    /* kvm_all_vcpus includes parked vcpus */
+    QLIST_HEAD(, KVMVcpu) kvm_all_vcpus;
 
     /* For "info mtree -f" to tell if an MR is registered in KVM */
     int nr_as;

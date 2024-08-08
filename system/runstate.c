@@ -30,7 +30,6 @@
 #include "crypto/cipher.h"
 #include "crypto/init.h"
 #include "exec/cpu-common.h"
-#include "exec/confidential-guest-support.h"
 #include "gdbstub/syscalls.h"
 #include "hw/boards.h"
 #include "migration/misc.h"
@@ -508,7 +507,8 @@ static int qemu_debug_requested(void)
 void qemu_system_reset(ShutdownCause reason)
 {
     MachineClass *mc;
-    Error *local_err = NULL;
+    AccelClass *acc;
+    int ret;
 
     mc = current_machine ? MACHINE_GET_CLASS(current_machine) : NULL;
 
@@ -523,8 +523,6 @@ void qemu_system_reset(ShutdownCause reason)
     case SHUTDOWN_CAUSE_NONE:
     case SHUTDOWN_CAUSE_SUBSYSTEM_RESET:
     case SHUTDOWN_CAUSE_SNAPSHOT_LOAD:
-    case SHUTDOWN_CAUSE_SEV_RESET: /* don't send QMP event for this */
-        break;
     default:
         qapi_event_send_reset(shutdown_caused_by_guest(reason), reason);
     }
@@ -542,18 +540,30 @@ void qemu_system_reset(ShutdownCause reason)
         assert(runstate_check(RUN_STATE_PRELAUNCH));
     }
 
-    vm_set_suspended(false);
-
-    /* do reinitialization of sev vm after reset */
-    if (reason == SHUTDOWN_CAUSE_SEV_RESET) {
-        if (current_machine->cgs) {
-            /* this calls sev_common_kvm_init() -> sev_snp_launch_start() */
-            if (confidential_guest_kvm_init(current_machine->cgs,
-                                            &local_err) < 0) {
-                error_report_err(local_err);
+    /*
+     * close the old vmfd and create a new vmfd here. This will destroy the old
+     * vm sev context.
+     * TODO: SHUTDOWN_CAUSE_SEV_RESET is passed from the fw_cfg interface and
+     * therefore, only resets from fw_cfg interface trigger this. See
+     * hw/misc/vmfwupdate.c:regenerate_sev_vm(). If we removed this special
+     * flag, all confidential resets for all architectures would trigger vmfd
+     * reset logic and vm regeneration with new SEV context. Is this what we
+     * really want? If that is so, we need to make sure that our vmfd reset
+     * mechanism works correctly for all architectures, not just x86. Currently
+     * we only support x86 (the fwcfg interface is only enabled for x86).
+     */
+    if (reason == SHUTDOWN_CAUSE_SEV_RESET &&
+        current_machine->cgs) {
+        acc = ACCEL_GET_CLASS(current_machine->accelerator);
+        if (acc->reset_vmfd) {
+            ret = acc->reset_vmfd(current_machine);
+            if (ret < 0) {
+                error_report("unable to reset vmfd: %d", ret);
             }
         }
     }
+
+    vm_set_suspended(false);
 }
 
 /*

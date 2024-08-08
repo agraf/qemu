@@ -374,6 +374,8 @@ int kvm_arch_get_default_type(MachineState *ms);
 
 int kvm_arch_init(MachineState *ms, KVMState *s);
 
+int kvm_arch_vmfd_change_ops(MachineState *ms, KVMState *s);
+
 int kvm_arch_init_vcpu(CPUState *cpu);
 int kvm_arch_destroy_vcpu(CPUState *cpu);
 
@@ -407,6 +409,31 @@ void kvm_irqchip_add_irq_route(KVMState *s, int gsi, int irqchip, int pin);
 void kvm_irqchip_add_change_notifier(Notifier *n);
 void kvm_irqchip_remove_change_notifier(Notifier *n);
 void kvm_irqchip_change_notify(void);
+
+/* argument to vmfd change notifier */
+typedef struct VmfdChangeNotifier {
+    int vmfd;
+} VmfdChangeNotifier;
+
+/*
+ * register a notifier to get notified when a vm file descriptor
+ * changes as a part of the sev "reset" process. Memory and CPU
+ * subsystems should use this mechanism to create new fds against
+ * this new vm file descriptor.
+ */
+void kvm_vmfd_add_change_notifier(NotifierWithReturn *n);
+/*
+ * de-register vm file descriptor change notification
+ */
+void kvm_vmfd_remove_change_notifier(NotifierWithReturn *n);
+
+/*
+ * This is called when the vm file descriptor is changed
+ * as a part of the sev "reset" process. This will make sure
+ * all interested parties get notified of the new vmfd and
+ * they can create new descriptors against this new fd.
+ */
+int kvm_vmfd_change_notify(Error **errp);
 
 struct kvm_guest_debug;
 struct kvm_debug_exit_arch;
@@ -564,7 +591,8 @@ bool kvm_dirty_ring_enabled(void);
 uint32_t kvm_dirty_ring_size(void);
 
 void kvm_mark_guest_state_protected(void);
-void kvm_mark_guest_state_unprotected(void);
+
+void kvm_mark_guest_state_mutable(void);
 
 /**
  * kvm_hwpoisoned_mem - indicate if there is any hwpoisoned page

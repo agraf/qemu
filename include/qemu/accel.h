@@ -38,6 +38,7 @@ typedef struct AccelClass {
 
     const char *name;
     int (*init_machine)(MachineState *ms);
+    int (*reset_vmfd)(MachineState *ms);
 #ifndef CONFIG_USER_ONLY
     void (*setup_post)(MachineState *ms, AccelState *accel);
     bool (*has_memory)(MachineState *ms, AddressSpace *as,

@@ -75,6 +75,12 @@ struct KVMParkedVcpu {
     QLIST_ENTRY(KVMParkedVcpu) node;
 };
 
+struct KVMVcpu {
+    CPUState *cpu;
+    QLIST_ENTRY(KVMVcpu) node;
+};
+
+VmfdChangeNotifier vmfd_notifier;
 KVMState *kvm_state;
 bool kvm_kernel_irqchip;
 bool kvm_split_irqchip;
@@ -107,6 +113,15 @@ static const KVMCapabilityInfo kvm_required_capabilites[] = {
 
 static NotifierList kvm_irqchip_change_notifiers =
     NOTIFIER_LIST_INITIALIZER(kvm_irqchip_change_notifiers);
+
+static NotifierWithReturnList register_vmfd_changed_notifiers =
+    NOTIFIER_WITH_RETURN_LIST_INITIALIZER(register_vmfd_changed_notifiers);
+
+static int kvm_rebind_vcpus(NotifierWithReturn *notifier,
+                            void *unused, Error **errp);
+static struct NotifierWithReturn vcpu_vmfd_change_notifier = {
+    .notify = kvm_rebind_vcpus,
+};
 
 struct KVMResampleFd {
     int gsi;
@@ -340,6 +355,37 @@ err:
     return ret;
 }
 
+static void kvm_queue_vcpu(CPUState *cpu)
+{
+    struct KVMVcpu *vcpu;
+
+    vcpu = g_malloc0(sizeof(*vcpu));
+    vcpu->cpu = cpu;
+    QLIST_INSERT_HEAD(&kvm_state->kvm_all_vcpus, vcpu, node);
+}
+
+static int kvm_rebind_vcpus(NotifierWithReturn *notifier,
+                            void *unused, Error **errp)
+{
+    struct KVMVcpu *vcpu;
+    unsigned long vcpu_id;
+    KVMState *s = kvm_state;
+    int kvm_fd;
+
+    QLIST_FOREACH(vcpu, &s->kvm_all_vcpus, node) {
+        vcpu_id = kvm_arch_vcpu_id(vcpu->cpu);
+        kvm_fd = kvm_vm_ioctl(s, KVM_CREATE_VCPU, vcpu_id);
+        if (kvm_fd < 0) {
+            error_report("KVM_CREATE_VCPU IOCTL failed for vCPU %lu", vcpu_id);
+            return kvm_fd;
+        }
+        close(vcpu->cpu->kvm_fd);
+        vcpu->cpu->kvm_fd = kvm_fd;
+    }
+
+    return 0;
+}
+
 void kvm_park_vcpu(CPUState *cpu)
 {
     struct KVMParkedVcpu *vcpu;
@@ -386,6 +432,7 @@ int kvm_create_vcpu(CPUState *cpu)
             error_report("KVM_CREATE_VCPU IOCTL failed for vCPU %lu", vcpu_id);
             return kvm_fd;
         }
+        kvm_queue_vcpu(cpu);
     }
 
     cpu->kvm_fd = kvm_fd;
@@ -2051,6 +2098,22 @@ void kvm_irqchip_change_notify(void)
     notifier_list_notify(&kvm_irqchip_change_notifiers, NULL);
 }
 
+void kvm_vmfd_add_change_notifier(NotifierWithReturn *n)
+{
+    notifier_with_return_list_add(&register_vmfd_changed_notifiers, n);
+}
+
+void kvm_vmfd_remove_change_notifier(NotifierWithReturn *n)
+{
+    notifier_with_return_remove(n);
+}
+
+int kvm_vmfd_change_notify(Error **errp)
+{
+    return notifier_with_return_list_notify(&register_vmfd_changed_notifiers,
+                                            &vmfd_notifier, errp);
+}
+
 int kvm_irqchip_get_virq(KVMState *s)
 {
     int next_virq;
@@ -2293,11 +2356,9 @@ void kvm_irqchip_set_qemuirq_gsi(KVMState *s, qemu_irq irq, int gsi)
     g_hash_table_insert(s->gsimap, irq, GINT_TO_POINTER(gsi));
 }
 
-static void kvm_irqchip_create(KVMState *s)
+static void do_kvm_irqchip_create(KVMState *s)
 {
     int ret;
-
-    assert(s->kernel_irqchip_split != ON_OFF_AUTO_AUTO);
     if (kvm_check_extension(s, KVM_CAP_IRQCHIP)) {
         ;
     } else if (kvm_check_extension(s, KVM_CAP_S390_IRQCHIP)) {
@@ -2330,7 +2391,13 @@ static void kvm_irqchip_create(KVMState *s)
         fprintf(stderr, "Create kernel irqchip failed: %s\n", strerror(-ret));
         exit(1);
     }
+}
 
+static void kvm_irqchip_create(KVMState *s)
+{
+    assert(s->kernel_irqchip_split != ON_OFF_AUTO_AUTO);
+
+    do_kvm_irqchip_create(s);
     kvm_kernel_irqchip = true;
     /* If we have an in-kernel IRQ chip then we must have asynchronous
      * interrupt delivery (though the reverse is not necessarily true)
@@ -2485,6 +2552,51 @@ static int kvm_setup_dirty_ring(KVMState *s)
     return 0;
 }
 
+static int kvm_reset_vmfd(MachineState *ms)
+{
+    KVMState *s;
+    int ret, type;
+    Error *err = NULL;
+
+    s = KVM_STATE(ms->accelerator);
+
+    if (s->vmfd >= 0) {
+        close(s->vmfd);
+    }
+
+    type = kvm_machine_type(ms);
+    if (type < 0) {
+        return -EINVAL;
+    }
+
+    ret = kvm_create_vm(ms, s, type);
+    if (ret < 0) {
+        return ret;
+    }
+
+    s->vmfd = ret;
+    vmfd_notifier.vmfd = s->vmfd;
+
+    kvm_setup_dirty_ring(s);
+
+    ret = kvm_arch_vmfd_change_ops(ms, s);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (s->kernel_irqchip_allowed) {
+        do_kvm_irqchip_create(s);
+    }
+
+    kvm_irqchip_commit_routes(s);
+
+    /* notify everyone that vmfd has changed. */
+    ret = kvm_vmfd_change_notify(&err);
+    assert (!err);
+
+    return ret;
+}
+
 static int kvm_init(MachineState *ms)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
@@ -2524,6 +2636,7 @@ static int kvm_init(MachineState *ms)
     QTAILQ_INIT(&s->kvm_sw_breakpoints);
 #endif
     QLIST_INIT(&s->kvm_parked_vcpus);
+    QLIST_INIT(&s->kvm_all_vcpus);
     s->fd = qemu_open_old(s->device ?: "/dev/kvm", O_RDWR);
     if (s->fd == -1) {
         error_report("Could not access KVM kernel module: %m");
@@ -2700,6 +2813,7 @@ static int kvm_init(MachineState *ms)
                             query_stats_schemas_cb);
     }
 
+    kvm_vmfd_add_change_notifier(&vcpu_vmfd_change_notifier);
     return 0;
 
 err:
@@ -3870,6 +3984,7 @@ static void kvm_accel_class_init(ObjectClass *oc, void *data)
     AccelClass *ac = ACCEL_CLASS(oc);
     ac->name = "KVM";
     ac->init_machine = kvm_init;
+    ac->reset_vmfd = kvm_reset_vmfd;
     ac->has_memory = kvm_accel_has_memory;
     ac->allowed = &kvm_allowed;
     ac->gdbstub_supported_sstep_flags = kvm_gdbstub_sstep_flags;
@@ -4331,7 +4446,7 @@ void kvm_mark_guest_state_protected(void)
     kvm_state->guest_state_protected = true;
 }
 
-void kvm_mark_guest_state_unprotected(void)
+void kvm_mark_guest_state_mutable(void)
 {
     kvm_state->guest_state_protected = false;
 }
