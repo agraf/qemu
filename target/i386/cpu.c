@@ -7351,7 +7351,9 @@ static void x86_cpu_reset_hold(Object *obj, ResetType type)
     env->amd_tsc_scale_msr =  MSR_AMD64_TSC_RATIO_DEFAULT;
 #endif
 
-    x86_vmfw_cpustate(cpu);
+    if (0) {
+        x86_vmfw_cpustate(cpu);
+    }
 }
 
 void x86_cpu_after_reset(X86CPU *cpu)

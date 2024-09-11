@@ -1709,8 +1709,34 @@ static void pc_machine_initfn(Object *obj)
 
 static void pc_machine_reset(MachineState *machine, ShutdownCause reason)
 {
+    VMFwUpdateState *vmfw;
     CPUState *cs;
     X86CPU *cpu;
+
+    /* Load BIOS from fwupdate if available */
+    vmfw = vmfwupdate_find();
+    if (vmfw) {
+        int i;
+
+        /* TODO: vmfwupdate should only care about the firmware blob */
+        for (i = 0; i < vmfw->n_entries; i++) {
+            FwCfgVmFwUpdateBlob *blob = &vmfw->vmfwupdate_blobs[i];
+
+            if (blob->map_type == VMFW_TYPE_MAP_PRIVATE) {
+                X86MachineState *x86ms = X86_MACHINE(machine);
+                void *bios = memory_region_get_ram_ptr(&x86ms->bios);
+                uint64_t bios_size = memory_region_size(&x86ms->bios);
+
+printf("XXX Old BIOS: size=%#lx\n", bios_size);
+printf("XXX New BIOS: addr=%#lx size=%#x\n", blob->paddr, blob->size);
+                g_assert(blob->size <= bios_size);
+
+                /* Read new BIOS from guest RAM into the BIOS region */
+                cpu_physical_memory_read(blob->paddr, bios + bios_size - blob->size, blob->size);
+                x86_firmware_configure(0x100000000ULL - blob->size, bios, blob->size);
+            }
+        }
+    }
 
     qemu_devices_reset(reason);
 

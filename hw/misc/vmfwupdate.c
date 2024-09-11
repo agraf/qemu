@@ -68,7 +68,9 @@ static FWCfgState* get_x86_fw_cfg(void) {
 }
 #endif
 
-static void regenerate_sev_vm(void) {
+#include "qemu/log.h"
+
+static void regenerate_sev_vm(VMFwUpdateState *s) {
     MachineState *ms;
 
     Object *m_obj = qdev_get_machine();
@@ -76,6 +78,8 @@ static void regenerate_sev_vm(void) {
         return;
     }
     ms = MACHINE(m_obj);
+
+    qemu_loglevel |= CPU_LOG_TB_IN_ASM | CPU_LOG_TB_CPU;
 
     if (ms->cgs) {
         /* mark guest state as mutable so that we can initiate a reset */
@@ -181,7 +185,7 @@ static void fw_ctrl_write(void *dev, off_t offset, size_t len) {
          * trigger reboot of the guest with known state and blobs in the
          * specified memory location.
          */
-        regenerate_sev_vm();
+        regenerate_sev_vm(s);
         /* does not return */
         break;
     case 'd':
