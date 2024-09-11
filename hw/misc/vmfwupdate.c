@@ -47,6 +47,8 @@ static void fw_update_reset(void *dev)
     s->fw_cfg_ctl = 0;
     memset(&s->vmfwupdate_blobs, 0, sizeof(s->vmfwupdate_blobs));
     memset(&s->cpu_state, 0, sizeof(s->cpu_state));
+
+printf("XXX %s:%d\n", __func__, __LINE__);
 }
 
 #if 0
@@ -75,13 +77,10 @@ static void regenerate_sev_vm(void) {
     }
     ms = MACHINE(m_obj);
 
-    if (!ms->cgs) {
-        /* for non-sev guests, this is a NOOP */
-        return;
+    if (ms->cgs) {
+        /* mark guest state as mutable so that we can initiate a reset */
+        kvm_mark_guest_state_mutable();
     }
-
-    /* mark guest state as mutable so that we can initiate a reset */
-    kvm_mark_guest_state_mutable();
 
     /*
      * initiate reset.
