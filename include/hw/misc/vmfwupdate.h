@@ -46,9 +46,9 @@
 
 /* fw_cfg file definitions */
 #define FILE_VMFWUPDATE_BLOB "etc/vmfwupdate-blob"
-#define FILE_VMFWUPDATE_CPUSTATE "/etc/vmfwupdate-cpu"
-#define FILE_VMFWUPDATE_CAP "/etc/fwupdate-cap"
-#define FILE_VMFWUPDATE_CONTROL "/etc/fwupdate-control"
+#define FILE_VMFWUPDATE_CPUSTATE "etc/vmfwupdate-cpu"
+#define FILE_VMFWUPDATE_CAP "etc/fwupdate-cap"
+#define FILE_VMFWUPDATE_CONTROL "etc/fwupdate-control"
 
 typedef struct VMFwUpdateState VMFwUpdateState;
 typedef struct FwCfgVmFwUpdate FwCfgVmFwUpdate;
