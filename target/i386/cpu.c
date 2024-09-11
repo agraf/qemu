@@ -41,6 +41,7 @@
 #include "exec/address-spaces.h"
 #include "hw/boards.h"
 #include "hw/i386/sgx-epc.h"
+#include "hw/misc/vmfwupdate.h"
 #endif
 
 #include "disas/capstone.h"
@@ -7054,6 +7055,134 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
     }
 }
 
+static void x86_getput_reg(__u64 *kvm_reg, target_ulong *qemu_reg, int set)
+{
+    if (set) {
+        *kvm_reg = *qemu_reg;
+    } else {
+        *qemu_reg = *kvm_reg;
+    }
+}
+
+void x86_getput_regs(X86CPU *cpu, struct kvm_regs *regs, int set)
+{
+    CPUX86State *env = &cpu->env;
+
+    x86_getput_reg(&regs->rax, &env->regs[R_EAX], set);
+    x86_getput_reg(&regs->rbx, &env->regs[R_EBX], set);
+    x86_getput_reg(&regs->rcx, &env->regs[R_ECX], set);
+    x86_getput_reg(&regs->rdx, &env->regs[R_EDX], set);
+    x86_getput_reg(&regs->rsi, &env->regs[R_ESI], set);
+    x86_getput_reg(&regs->rdi, &env->regs[R_EDI], set);
+    x86_getput_reg(&regs->rsp, &env->regs[R_ESP], set);
+    x86_getput_reg(&regs->rbp, &env->regs[R_EBP], set);
+#ifdef TARGET_X86_64
+    x86_getput_reg(&regs->r8, &env->regs[8], set);
+    x86_getput_reg(&regs->r9, &env->regs[9], set);
+    x86_getput_reg(&regs->r10, &env->regs[10], set);
+    x86_getput_reg(&regs->r11, &env->regs[11], set);
+    x86_getput_reg(&regs->r12, &env->regs[12], set);
+    x86_getput_reg(&regs->r13, &env->regs[13], set);
+    x86_getput_reg(&regs->r14, &env->regs[14], set);
+    x86_getput_reg(&regs->r15, &env->regs[15], set);
+#endif
+
+    x86_getput_reg(&regs->rflags, &env->eflags, set);
+    x86_getput_reg(&regs->rip, &env->eip, set);
+}
+
+static void get_seg(SegmentCache *lhs, const struct kvm_segment *rhs)
+{
+    lhs->selector = rhs->selector;
+    lhs->base = rhs->base;
+    lhs->limit = rhs->limit;
+    lhs->flags = (rhs->type << DESC_TYPE_SHIFT) |
+                 ((rhs->present && !rhs->unusable) * DESC_P_MASK) |
+                 (rhs->dpl << DESC_DPL_SHIFT) |
+                 (rhs->db << DESC_B_SHIFT) |
+                 (rhs->s * DESC_S_MASK) |
+                 (rhs->l << DESC_L_SHIFT) |
+                 (rhs->g * DESC_G_MASK) |
+                 (rhs->avl * DESC_AVL_MASK);
+}
+
+void x86_apply_sregs2(X86CPU *cpu, struct kvm_sregs2 *sregs)
+{
+    CPUX86State *env = &cpu->env;
+    int i;
+
+    get_seg(&env->segs[R_CS], &sregs->cs);
+    get_seg(&env->segs[R_DS], &sregs->ds);
+    get_seg(&env->segs[R_ES], &sregs->es);
+    get_seg(&env->segs[R_FS], &sregs->fs);
+    get_seg(&env->segs[R_GS], &sregs->gs);
+    get_seg(&env->segs[R_SS], &sregs->ss);
+
+    get_seg(&env->tr, &sregs->tr);
+    get_seg(&env->ldt, &sregs->ldt);
+
+    env->idt.limit = sregs->idt.limit;
+    env->idt.base = sregs->idt.base;
+    env->gdt.limit = sregs->gdt.limit;
+    env->gdt.base = sregs->gdt.base;
+
+    env->cr[0] = sregs->cr0;
+    env->cr[2] = sregs->cr2;
+    env->cr[3] = sregs->cr3;
+    env->cr[4] = sregs->cr4;
+
+    env->efer = sregs->efer;
+    if (sev_es_enabled() && env->efer & MSR_EFER_LME &&
+        env->cr[0] & CR0_PG_MASK) {
+        env->efer |= MSR_EFER_LMA;
+    }
+
+    env->pdptrs_valid = sregs->flags & KVM_SREGS2_FLAGS_PDPTRS_VALID;
+
+    if (env->pdptrs_valid) {
+        for (i = 0; i < 4; i++) {
+            env->pdptrs[i] = sregs->pdptrs[i];
+        }
+    }
+
+    /* changes to apic base and cr8/tpr are read back via kvm_arch_post_run */
+    x86_update_hflags(env);
+}
+
+/*
+ * x86_vmfw_cpustate - Perform fw_cfg based BSP state override
+ */
+static void x86_vmfw_cpustate(X86CPU *cpu)
+{
+#if !defined(CONFIG_USER_ONLY) && defined(CONFIG_FW_CFG_DMA)
+    VMFwUpdateState *s;
+    FwCfgVmFwUpdateCpuState *cs;
+
+    /* Fw-cfg CPU state only defines BSP state. Leave secondaries alone. */
+    if (!cpu_is_bsp(cpu)) {
+        return;
+    }
+
+    s = vmfwupdate_find();
+    if (!s) {
+        return;
+    }
+
+    cs = &s->cpu_state;
+
+    /*
+     * X86 RFLAGS must have BIT(2) set, so we can use it to indicate that
+     * cpu_state is invalid and hence we should not apply it.
+     */
+    if (!cs->regs.rflags) {
+        return;
+    }
+
+    x86_getput_regs(cpu, &cs->regs, 0);
+    x86_apply_sregs2(cpu, &cs->s);
+#endif /* !defined(CONFIG_USER_ONLY) && defined(CONFIG_FW_CFG_DMA) */
+}
+
 static void x86_cpu_set_sgxlepubkeyhash(CPUX86State *env)
 {
 #ifndef CONFIG_USER_ONLY
@@ -7220,8 +7349,9 @@ static void x86_cpu_reset_hold(Object *obj, ResetType type)
     x86_cpu_set_sgxlepubkeyhash(env);
 
     env->amd_tsc_scale_msr =  MSR_AMD64_TSC_RATIO_DEFAULT;
-
 #endif
+
+    x86_vmfw_cpustate(cpu);
 }
 
 void x86_cpu_after_reset(X86CPU *cpu)

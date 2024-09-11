@@ -3472,18 +3472,8 @@ static void get_seg(SegmentCache *lhs, const struct kvm_segment *rhs)
                  (rhs->avl * DESC_AVL_MASK);
 }
 
-static void kvm_getput_reg(__u64 *kvm_reg, target_ulong *qemu_reg, int set)
-{
-    if (set) {
-        *kvm_reg = *qemu_reg;
-    } else {
-        *qemu_reg = *kvm_reg;
-    }
-}
-
 static int kvm_getput_regs(X86CPU *cpu, int set)
 {
-    CPUX86State *env = &cpu->env;
     struct kvm_regs regs;
     int ret = 0;
 
@@ -3494,27 +3484,7 @@ static int kvm_getput_regs(X86CPU *cpu, int set)
         }
     }
 
-    kvm_getput_reg(&regs.rax, &env->regs[R_EAX], set);
-    kvm_getput_reg(&regs.rbx, &env->regs[R_EBX], set);
-    kvm_getput_reg(&regs.rcx, &env->regs[R_ECX], set);
-    kvm_getput_reg(&regs.rdx, &env->regs[R_EDX], set);
-    kvm_getput_reg(&regs.rsi, &env->regs[R_ESI], set);
-    kvm_getput_reg(&regs.rdi, &env->regs[R_EDI], set);
-    kvm_getput_reg(&regs.rsp, &env->regs[R_ESP], set);
-    kvm_getput_reg(&regs.rbp, &env->regs[R_EBP], set);
-#ifdef TARGET_X86_64
-    kvm_getput_reg(&regs.r8, &env->regs[8], set);
-    kvm_getput_reg(&regs.r9, &env->regs[9], set);
-    kvm_getput_reg(&regs.r10, &env->regs[10], set);
-    kvm_getput_reg(&regs.r11, &env->regs[11], set);
-    kvm_getput_reg(&regs.r12, &env->regs[12], set);
-    kvm_getput_reg(&regs.r13, &env->regs[13], set);
-    kvm_getput_reg(&regs.r14, &env->regs[14], set);
-    kvm_getput_reg(&regs.r15, &env->regs[15], set);
-#endif
-
-    kvm_getput_reg(&regs.rflags, &env->eflags, set);
-    kvm_getput_reg(&regs.rip, &env->eip, set);
+    x86_getput_regs(cpu, &regs, set);
 
     if (set) {
         ret = kvm_vcpu_ioctl(CPU(cpu), KVM_SET_REGS, &regs);
@@ -4374,51 +4344,15 @@ static int kvm_get_sregs(X86CPU *cpu)
 
 static int kvm_get_sregs2(X86CPU *cpu)
 {
-    CPUX86State *env = &cpu->env;
     struct kvm_sregs2 sregs;
-    int i, ret;
+    int ret;
 
     ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_SREGS2, &sregs);
     if (ret < 0) {
         return ret;
     }
 
-    get_seg(&env->segs[R_CS], &sregs.cs);
-    get_seg(&env->segs[R_DS], &sregs.ds);
-    get_seg(&env->segs[R_ES], &sregs.es);
-    get_seg(&env->segs[R_FS], &sregs.fs);
-    get_seg(&env->segs[R_GS], &sregs.gs);
-    get_seg(&env->segs[R_SS], &sregs.ss);
-
-    get_seg(&env->tr, &sregs.tr);
-    get_seg(&env->ldt, &sregs.ldt);
-
-    env->idt.limit = sregs.idt.limit;
-    env->idt.base = sregs.idt.base;
-    env->gdt.limit = sregs.gdt.limit;
-    env->gdt.base = sregs.gdt.base;
-
-    env->cr[0] = sregs.cr0;
-    env->cr[2] = sregs.cr2;
-    env->cr[3] = sregs.cr3;
-    env->cr[4] = sregs.cr4;
-
-    env->efer = sregs.efer;
-    if (sev_es_enabled() && env->efer & MSR_EFER_LME &&
-        env->cr[0] & CR0_PG_MASK) {
-        env->efer |= MSR_EFER_LMA;
-    }
-
-    env->pdptrs_valid = sregs.flags & KVM_SREGS2_FLAGS_PDPTRS_VALID;
-
-    if (env->pdptrs_valid) {
-        for (i = 0; i < 4; i++) {
-            env->pdptrs[i] = sregs.pdptrs[i];
-        }
-    }
-
-    /* changes to apic base and cr8/tpr are read back via kvm_arch_post_run */
-    x86_update_hflags(env);
+    x86_apply_sregs2(cpu, &sregs);
 
     return 0;
 }

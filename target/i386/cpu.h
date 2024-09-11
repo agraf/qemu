@@ -28,6 +28,7 @@
 #include "qapi/qapi-types-common.h"
 #include "qemu/cpu-float.h"
 #include "qemu/timer.h"
+#include "linux-headers/asm-x86/kvm.h"
 
 #define XEN_NR_VIRQS 24
 
@@ -2373,6 +2374,8 @@ void cpu_set_apic_feature(CPUX86State *env);
 void host_cpuid(uint32_t function, uint32_t count,
                 uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx);
 bool cpu_has_x2apic_feature(CPUX86State *env);
+void x86_apply_sregs2(X86CPU *cpu, struct kvm_sregs2 *sregs);
+void x86_getput_regs(X86CPU *cpu, struct kvm_regs *regs, int set);
 
 /* helper.c */
 void x86_cpu_set_a20(X86CPU *cpu, int a20_state);
