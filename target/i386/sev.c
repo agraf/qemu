@@ -1621,7 +1621,6 @@ static int sev_reinitialize(NotifierWithReturn *notifier,
                             void *unused, Error** errp) {
     SevCommonState *sev_common = SEV_COMMON(MACHINE(qdev_get_machine())->cgs);
     SevCommonStateClass *klass;
-    int ret;
 
     if (!sev_common) {
         return 0;

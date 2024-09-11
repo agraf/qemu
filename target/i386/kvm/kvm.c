@@ -3189,6 +3189,7 @@ int kvm_arch_vmfd_change_ops(MachineState *ms, KVMState *s)
 {
     uint64_t identity_base;
     int ret;
+    Error *local_err = NULL;
 
     /*
      * Initialize SEV context, if required
@@ -3397,7 +3398,9 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         }
     }
 
-    ret = kvm_vm_enable_notify_vmexit(s);
+    if (0) {
+        ret = kvm_vm_enable_notify_vmexit(s);
+    }
     if (ret < 0) {
         return ret;
     }
