@@ -1722,7 +1722,7 @@ static void pc_machine_reset(MachineState *machine, ShutdownCause reason)
         for (i = 0; i < vmfw->n_entries; i++) {
             FwCfgVmFwUpdateBlob *blob = &vmfw->vmfwupdate_blobs[i];
 
-            if (blob->map_type == VMFW_TYPE_MAP_PRIVATE) {
+            if (blob->blob_type == VMFW_TYPE_BLOB_FW) {
                 X86MachineState *x86ms = X86_MACHINE(machine);
                 void *bios = memory_region_get_ram_ptr(&x86ms->bios);
                 uint64_t bios_size = memory_region_size(&x86ms->bios);
