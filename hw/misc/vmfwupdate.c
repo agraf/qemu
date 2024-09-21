@@ -43,9 +43,9 @@ static void fw_update_reset(void *dev)
     VMFwUpdateState *s = VMFWUPDATE(dev);
 
     s->has_fw_blob = false;
-    s->n_entries = 0;
+    //s->n_entries = 0;
     s->fw_cfg_ctl = 0;
-    memset(&s->vmfwupdate_blobs, 0, sizeof(s->vmfwupdate_blobs));
+    //memset(&s->vmfwupdate_blobs, 0, sizeof(s->vmfwupdate_blobs));
     memset(&s->cpu_state, 0, sizeof(s->cpu_state));
 
 printf("XXX %s:%d\n", __func__, __LINE__);
@@ -144,6 +144,7 @@ static void fw_ctrl_write(void *dev, off_t offset, size_t len) {
      * Set the EDK fw_cfg files to appropriate values here. See x86_load_linux()
      * EDK linux loader will read these fwcfg selector values and act on it.
      */
+    if (0) {
     for (i = 0; i < s->n_entries; i++) {
         entry = &s->vmfwupdate_blobs[i];
         switch (entry->blob_type) {
@@ -171,6 +172,7 @@ static void fw_ctrl_write(void *dev, off_t offset, size_t len) {
                     "with provided launch digests!");
             return;
         }
+    }
     }
 
     /*
