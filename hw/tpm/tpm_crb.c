@@ -97,7 +97,7 @@ static const VMStateDescription vmstate_tpm_crb_none = {
     }
 };
 
-static const Property tpm_crb_properties[] = {
+static const Property tpm_crb_none_properties[] = {
     DEFINE_PROP_TPMBE("tpmdev", CRBState, state.tpmbe),
     DEFINE_PROP_BOOL("ppi", CRBState, state.ppi_enabled, true),
 };
@@ -154,7 +154,7 @@ static void build_tpm_crb_none_aml(AcpiDevAmlIf *adev, Aml *scope)
                       true);
 }
 
-static void tpm_crb_none_class_init(ObjectClass *klass, void *data)
+static void tpm_crb_none_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     TPMIfClass *tc = TPM_IF_CLASS(klass);

@@ -1597,12 +1597,12 @@ static void test_acpi_q35_tcg_tpm12_tis(void)
 
 static void test_acpi_q35_tcg_tpm2_crb(void)
 {
-    test_acpi_tcg_tpm("q35", "crb", 0xFED40000, TPM_VERSION_2_0);
+    test_acpi_tcg_tpm("q35", "x86", "crb", 0xFED40000, TPM_VERSION_2_0);
 }
 
 static void test_acpi_virt_tcg_tpm2_crb(void)
 {
-    test_acpi_tcg_tpm("virt", "crb-device", 0xFED40000, TPM_VERSION_2_0);
+    test_acpi_tcg_tpm("virt", "aarch64", "crb-device", 0xFED40000, TPM_VERSION_2_0);
 }
 
 static void test_acpi_tcg_dimm_pxm(const char *machine, const char *arch)

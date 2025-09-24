@@ -9,7 +9,7 @@
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
  */
-#include "sysemu/tpm.h"
+#include "system/tpm.h"
 #include "hw/platform-bus.h"
 #include "hw/sysbus.h"
 #include "qapi/error.h"

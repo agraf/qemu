@@ -16,9 +16,9 @@
 #ifndef TPM_TPM_CRB_H
 #define TPM_TPM_CRB_H
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "hw/acpi/tpm.h"
-#include "sysemu/tpm_backend.h"
+#include "system/tpm_backend.h"
 #include "tpm_ppi.h"
 
 #define CRB_CTRL_CMD_SIZE (TPM_CRB_ADDR_SIZE - A_CRB_DATA_BUFFER)

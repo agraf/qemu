@@ -100,7 +100,6 @@ static const Property tpm_tis_sysbus_properties[] = {
                        TPM_TIS_ADDR_BASE),
     DEFINE_PROP_UINT64("x-size", TPMStateSysBus, size,
                        TPM_TIS_ADDR_SIZE),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void tpm_tis_sysbus_initfn(Object *obj)

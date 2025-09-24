@@ -24,7 +24,7 @@
 #include "hw/sysbus.h"
 #include "qapi/visitor.h"
 #include "qom/object.h"
-#include "sysemu/tpm_util.h"
+#include "system/tpm_util.h"
 #include "trace.h"
 #include "tpm_crb.h"
 
@@ -69,13 +69,10 @@ static const VMStateDescription vmstate_tpm_crb_sysbus = {
     }
 };
 
-static Property tpm_crb_sysbus_properties[] = {
+static const Property tpm_crb_sysbus_properties[] = {
     DEFINE_PROP_TPMBE("tpmdev", TPMCRBStateSysBus, state.tpmbe),
-    DEFINE_PROP_UINT64("x-baseaddr", TPMCRBStateSysBus,
-                       baseaddr, TPM_CRB_ADDR_BASE),
-    DEFINE_PROP_UINT64("x-size", TPMCRBStateSysBus,
-                       size, TPM_CRB_ADDR_SIZE),
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_UINT64("x-baseaddr", TPMCRBStateSysBus, baseaddr, TPM_CRB_ADDR_BASE),
+    DEFINE_PROP_UINT64("x-size", TPMCRBStateSysBus, size, TPM_CRB_ADDR_SIZE),
 };
 
 static void tpm_crb_sysbus_initfn(Object *obj)
@@ -123,7 +120,7 @@ static void build_tpm_crb_sysbus_aml(AcpiDevAmlIf *adev, Aml *scope)
     tpm_crb_build_aml(TPM_IF(adev), scope, s->baseaddr, s->size, false);
 }
 
-static void tpm_crb_sysbus_class_init(ObjectClass *klass, void *data)
+static void tpm_crb_sysbus_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     TPMIfClass *tc = TPM_IF_CLASS(klass);
@@ -134,7 +131,7 @@ static void tpm_crb_sysbus_class_init(ObjectClass *klass, void *data)
     tc->model = TPM_MODEL_TPM_CRB;
     dc->realize = tpm_crb_sysbus_realizefn;
     dc->user_creatable = true;
-    dc->reset = tpm_crb_sysbus_reset;
+    device_class_set_legacy_reset(dc, tpm_crb_sysbus_reset);
     tc->request_completed = tpm_crb_sysbus_request_completed;
     tc->get_version = tpm_crb_sysbus_get_tpm_version;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
