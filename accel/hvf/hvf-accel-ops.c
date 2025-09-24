@@ -131,6 +131,10 @@ static void hvf_set_phys_mem(MemoryRegionSection *section, bool add)
              * to remove the hvf memory slot so all accesses will trap.
              */
              add = false;
+        } else if (section->size == 0x1000) {
+             /* XXX HACK Make romd always do MMIO traps */
+             add = false;
+             printf("Removing TPM CRB region from romd map\n");
         }
     }
 
