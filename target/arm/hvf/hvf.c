@@ -1991,6 +1991,7 @@ int hvf_vcpu_exec(CPUState *cpu)
         uint32_t cm = (syndrome >> 8) & 0x1;
         uint64_t val = 0;
 
+        /* XXX here to populate pc in the trace */
         cpu_synchronize_state(cpu);
 
         trace_hvf_data_abort(env->pc, hvf_exit->exception.virtual_address,
@@ -2003,7 +2004,11 @@ int hvf_vcpu_exec(CPUState *cpu)
             break;
         }
 
-        assert(isv);
+        if (!isv) {
+            cpu_synchronize_state(cpu);
+            hvf_raise_exception(cpu, EXCP_UDEF, syn_uncategorized());
+            break;
+        }
 
         if (iswrite) {
             val = hvf_get_reg(cpu, srt);
