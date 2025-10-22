@@ -1466,6 +1466,10 @@ static void kvm_set_phys_mem(KVMMemoryListener *kml,
     if (!memory_region_is_ram(mr)) {
         if (writable || !kvm_readonly_mem_allowed) {
             return;
+        } else if (section->size == 0x1000) {
+             /* XXX HACK Make romd always do MMIO traps */
+             add = false;
+             printf("Removing TPM CRB region from romd map\n");
         } else if (!mr->romd_mode) {
             /* If the memory device is not in romd_mode, then we actually want
              * to remove the kvm memory slot so all accesses will trap. */
