@@ -1427,6 +1427,12 @@ static AddressSpace *virtio_pci_get_dma_as(DeviceState *d)
 {
     VirtIOPCIProxy *proxy = VIRTIO_PCI(d);
     PCIDevice *dev = &proxy->pci_dev;
+    VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+    bool has_dmb = virtio_host_has_feature(vdev, VIRTIO_F_DMB);
+
+    if (has_dmb) {
+        return &proxy->dmb_as;
+    }
 
     return pci_get_address_space(dev);
 }
@@ -2023,6 +2029,16 @@ static void virtio_pci_pre_plugged(DeviceState *d, Error **errp)
     virtio_add_feature(&vdev->host_features, VIRTIO_F_BAD_FEATURE);
 }
 
+static void virtio_pci_shmem_msi_trigger(PCIDevice *dev, MSIMessage msg)
+{
+    MemTxAttrs attrs = {};
+
+    /* Send MSI-X to the PCI address space, not our default DMA (bounce) one */
+    attrs.requester_id = pci_requester_id(dev);
+    address_space_stl_le(pci_get_address_space(dev), msg.address, msg.data,
+                         attrs, NULL);
+}
+
 /* This is called by virtio-bus just after the device is plugged. */
 static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
 {
@@ -2146,6 +2162,43 @@ static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
                          PCI_BASE_ADDRESS_MEM_TYPE_64,
                          &proxy->modern_bar);
 
+        /* Setup shared memory BAR if configured */
+        if (proxy->dmb_bar_size > 0) {
+            memory_region_init(&proxy->dmb_as_mr, OBJECT(proxy),
+                               "virtio-pci-shmem-as-mr", UINT64_MAX);
+            address_space_init(&proxy->dmb_as, &proxy->dmb_bar,
+                               "virtio-pci-shmem-as");
+
+            memory_region_init_ram(&proxy->dmb_bar, OBJECT(proxy),
+                                   "virtio-pci-shmem",
+                                   proxy->dmb_bar_size, &error_fatal);
+            memory_region_init_alias(&proxy->dmb_alias, NULL,
+                                     "virtio-pci-shmem-alias",
+                                     &proxy->dmb_bar, 0,
+                                     proxy->dmb_bar_size);
+
+            pci_register_bar(&proxy->pci_dev, proxy->dmb_bar_idx,
+                             PCI_BASE_ADDRESS_SPACE_MEMORY |
+                             PCI_BASE_ADDRESS_MEM_PREFETCH,
+                             &proxy->dmb_alias);
+
+            memory_region_add_subregion(&proxy->dmb_as_mr, 0,
+                                        &proxy->dmb_bar);
+
+            /* Expose BAR+offset to guest via shared memory capability */
+            virtio_pci_add_shm_cap(proxy, proxy->dmb_bar_idx, 0,
+                                   proxy->dmb_bar_size, VIRTIO_SHMEM_ID_DMB);
+
+            virtio_add_feature(&vdev->host_features, VIRTIO_F_DMB);
+
+            /*
+             * The default DMA space now goes to the DMB region, but MSI-X
+             * still needs the normal PCI address space. Override MSI trigger
+             * to use PCI address space instead.
+             */
+            proxy->pci_dev.msi_trigger = virtio_pci_shmem_msi_trigger;
+        }
+
         proxy->config_cap = virtio_pci_add_mem_cap(proxy, &cfg.cap);
         cfg_mask = (void *)(proxy->pci_dev.wmask + proxy->config_cap);
         pci_set_byte(&cfg_mask->cap.bar, ~0x0);
@@ -2234,12 +2287,14 @@ static void virtio_pci_realize(PCIDevice *pci_dev, Error **errp)
      *   region 0   --  virtio legacy io bar
      *   region 1   --  msi-x bar
      *   region 2   --  virtio modern io bar (off by default)
+     *   region 3   --  device memory buffer bar (off by default)
      *   region 4+5 --  virtio modern memory (64bit) bar
      *
      */
     proxy->legacy_io_bar_idx  = 0;
     proxy->msix_bar_idx       = 1;
     proxy->modern_io_bar_idx  = 2;
+    proxy->dmb_bar_idx        = 3;
     proxy->modern_mem_bar_idx = 4;
 
     proxy->common.offset = 0x0;
@@ -2368,6 +2423,9 @@ static void virtio_pci_exit(PCIDevice *pci_dev)
     if (modern_pio) {
         address_space_destroy(&proxy->modern_cfg_io_as);
     }
+    if (proxy->dmb_bar_size > 0) {
+        address_space_destroy(&proxy->dmb_as);
+    }
 }
 
 static void virtio_pci_reset(DeviceState *qdev)
@@ -2459,6 +2517,7 @@ static const Property virtio_pci_properties[] = {
                     VIRTIO_PCI_FLAG_INIT_FLR_BIT, true),
     DEFINE_PROP_BIT("aer", VirtIOPCIProxy, flags,
                     VIRTIO_PCI_FLAG_AER_BIT, false),
+    DEFINE_PROP_SIZE("dmb-size", VirtIOPCIProxy, dmb_bar_size, 0),
 };
 
 static void virtio_pci_dc_realize(DeviceState *qdev, Error **errp)

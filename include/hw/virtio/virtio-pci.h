@@ -164,6 +164,13 @@ struct VirtIOPCIProxy {
     VirtIOIRQFD *vector_irqfd;
     int nvqs_with_notifiers;
     VirtioBusState bus;
+    /* Device Memory Buffer (BAR) */
+    MemoryRegion dmb_bar;
+    MemoryRegion dmb_alias;
+    MemoryRegion dmb_as_mr;
+    AddressSpace dmb_as;
+    uint64_t dmb_bar_size;
+    uint32_t dmb_bar_idx;
 };
 
 static inline bool virtio_pci_modern(VirtIOPCIProxy *proxy)

@@ -61,6 +61,8 @@ static const qmp_virtio_feature_map_t virtio_transport_map[] = {
             "VIRTIO_F_ORDER_PLATFORM: Memory accesses ordered by platform"),
     FEATURE_ENTRY(VIRTIO_F_SR_IOV, \
             "VIRTIO_F_SR_IOV: Device supports single root I/O virtualization"),
+    FEATURE_ENTRY(VIRTIO_F_DMB, \
+            "VIRTIO_F_DMB: Device supports DMA inside a BAR region"),
     FEATURE_ENTRY(VIRTIO_F_RING_RESET, \
             "VIRTIO_F_RING_RESET: Driver can reset a queue individually"),
     /* Virtio ring transport features */

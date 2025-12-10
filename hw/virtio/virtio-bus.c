@@ -48,6 +48,7 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
     VirtioBusClass *klass = VIRTIO_BUS_GET_CLASS(bus);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_GET_CLASS(vdev);
     bool has_iommu = virtio_host_has_feature(vdev, VIRTIO_F_IOMMU_PLATFORM);
+    bool has_dmb = virtio_host_has_feature(vdev, VIRTIO_F_DMB);
     bool vdev_has_iommu;
     Error *local_err = NULL;
 
@@ -84,7 +85,7 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
     }
 
     vdev->dma_as = &address_space_memory;
-    if (has_iommu) {
+    if (has_iommu || has_dmb) {
         vdev_has_iommu = virtio_host_has_feature(vdev, VIRTIO_F_IOMMU_PLATFORM);
         /*
          * Present IOMMU_PLATFORM to the driver iff iommu_plattform=on and
@@ -94,7 +95,8 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
         virtio_add_feature(&vdev->host_features, VIRTIO_F_IOMMU_PLATFORM);
         if (klass->get_dma_as) {
             vdev->dma_as = klass->get_dma_as(qbus->parent);
-            if (!vdev_has_iommu && vdev->dma_as != &address_space_memory) {
+            if (!has_dmb && !vdev_has_iommu &&
+                vdev->dma_as != &address_space_memory) {
                 error_setg(errp,
                        "iommu_platform=true is not supported by the device");
                 return;

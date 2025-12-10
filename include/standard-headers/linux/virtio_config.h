@@ -118,4 +118,13 @@
  */
 #define VIRTIO_F_ADMIN_VQ		41
 
+/*
+ * When Device Memory Buffer (DMB) is active, all virtio memory addresses are
+ * offsets into a shared memory region that belongs to the device.
+ */
+#define VIRTIO_F_DMB		42
+
+/* Device Memory Buffer (DMB) shared memory region */
+#define VIRTIO_SHMEM_ID_DMB		2
+
 #endif /* _LINUX_VIRTIO_CONFIG_H */
